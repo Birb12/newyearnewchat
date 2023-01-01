@@ -11,6 +11,8 @@ from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import csv
+import re
+import smsnotify
 import initlogin
 
 BG_GRAY = "#ABB2B9"
@@ -22,16 +24,14 @@ FONT_BOLD = "Helvetica 13 bold"
 
 bubbles = []
 
-
 class ChatApplication:
     
     def __init__(self):
         self.window = Tk()
         self.window.resizable(height=True, width=True)
         self._setup_main_window()
-        photo = PhotoImage("chat1.png")
-        self.window.iconphoto
-        
+        self.window.title = "New Year New Chat"
+        self.window.wm_iconbitmap(bitmap = "icon.ico")        
     def run(self):
         self.window.mainloop()
         
@@ -78,18 +78,20 @@ class ChatApplication:
         send_button.place(relx=0.77, rely=0.3, relheight=0.4, relwidth=0.22)
 
         self.commandstack = []
+        self.userstack = []
+        self.userresolutions = ["dont throw errors at me"]
     def _on_enter_pressed(self, event):
         msg = self.msg_entry.get()
+        self.msg_entry.delete(0, 'end')
         self.make_bubble(msg)
 
-        print(len(self.commandstack))
 
-        with open('userdataset.csv', 'a', newline='') as f:
-            writer = csv.writer(f)
-            format = [msg]
-            writer.writerow(format)
         commands = ["/save", "new years resolution", "new years resolutions", "add", "remove", "notify", "remember", "login", "signup"]
 
+        if '+1' in msg and self.commandstack[-1] == "notify":
+            self.make_bubble_robot("You'll be getting a message soon! These messages are sent monthly.")
+            smsnotify.run_notify(self.userresolutions[0], msg)
+            return
         
         if '@' in msg and self.commandstack[-1] == "login":
             list = msg.split()
@@ -99,8 +101,8 @@ class ChatApplication:
             else:
                 email = list[0]
                 pwd = list[1]
-                success, name = initlogin.login(email, pwd)
-
+                success, name, user = initlogin.login(email, pwd)
+                self.userstack.append(user)
                 if success: self.make_bubble_robot("Login Successful. Welcome " + name + "!") ; return
                 else: self.make_bubble_robot("Login unsuccessful :(") ; return
 
@@ -114,16 +116,44 @@ class ChatApplication:
                 name = list[2]
                 success, name = initlogin.signup(email, pwd, name)
 
-                if success: self.make_bubble_robot("Login Successful. Welcome " + name + "!") ; return
-                else: self.make_bubble_robot("Login unsuccessful, please try again") ; return
+                if success: self.make_bubble_robot("Sign-up Successful. Welcome " + name + "!") ; return
+                else: self.make_bubble_robot("Sign-up unsuccessful, please try again") ; return
+        else:
+            with open('userdataset.csv', 'a', newline='') as f:
+                writer = csv.writer(f)
+                format = [msg]
+                writer.writerow(format)
+
 
 
         for command in commands:
             if command in msg:
                 if command == "/save": talk.get_model().save_pretrained("output-medium1") ; self.make_bubble_robot("Successfully saved current model!") ; return
-                elif command == "login": self.make_bubble_robot("Please give your email and name.") ; self.commandstack.append("login"); return
+                elif command == "login": self.make_bubble_robot("Please give your email and password.") ; self.commandstack.append("login"); return
                 elif command == "signup": self.make_bubble_robot("Please give your email, password and name.") ; self.commandstack.append("signup"); return
                 elif command == "new years resolution" or command == "new years resolutions": self.make_bubble_robot("Would you like to make a list? Use add to add new years resolutions, and remove to remove new years resolutions!"); self.make_bubble_robot("Keep in mind you need to be logged in for this feature."); return
+                elif command == "add":
+                    a = msg.replace('add ','')
+                    allres = initlogin.locate_resolutions(self.userstack[0], "add", a)
+                    self.make_bubble_robot("Done! Here are your new resolutions: ")
+                    self.userresolutions[0] = allres
+
+                    for i in allres:
+                        if i:
+                            self.make_bubble_robot("-" + i)
+                    return
+                elif command == "remove":
+                    a = msg.replace('remove ', '')
+                    allres = initlogin.locate_resolutions(self.userstack[0], "remove", a)
+                    self.make_bubble_robot("Done! Here are your new resolutions: ")
+                    self.userresolutions[0] = allres
+
+                    for i in allres:
+                        if i:
+                            self.make_bubble_robot("-" + i)
+                    return
+                elif command == "notify": self.make_bubble_robot("What is your phone number?: ") ; self.commandstack.append("notify"); return
+
 
 
         get_response = talk.talk(msg)
