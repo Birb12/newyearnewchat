@@ -169,8 +169,6 @@ class Args():
 
 
 
-tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
-model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
 
 df = pd.read_csv("userdataset.csv")
 
@@ -184,10 +182,84 @@ def main_train(df_trn):
     set_seed(args) 
 
     config = AutoConfig.from_pretrained(args.config_name, cache_dir=args.cache_dir)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, cache_dir=args.cache_dir)
-    model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, from_tf=False, config=config, cache_dir=args.cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium", cache_dir=args.cache_dir)
+    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium", from_tf=False, config=config, cache_dir=args.cache_dir)
     model.to(args.device)
     train_dataset = load_and_cache_examples(args, tokenizer, df_trn)
     global_step, tr_loss = train(args, train_dataset, model, tokenizer)
 
     os.makedirs(args.output_dir, exist_ok=True)
+
+def real_time(tokenizer, model, args, train_dataset):
+    if args.local_rank in [-1, 0]:
+        tb_writer = SummaryWriter()
+    
+    args.train_batch_size = args.per_gpu_train_batch_size 
+
+
+    def collate(examples: List[torch.Tensor]):
+        if tokenizer._pad_token is None:
+            return pad_sequence(examples, batch_first=True)
+        return pad_sequence(examples, batch_first=True, padding_value=tokenizer.pad_token_id)
+
+    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
+    train_dataloader = DataLoader(
+        train_dataset, sampler=train_sampler, batch_size=args.train_batch_size, collate_fn=collate, drop_last = True
+    )
+
+
+    model.resize_token_embeddings(len(tokenizer))
+
+
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay,
+        },
+        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
+    ]
+    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    epochs_trained = 0
+
+    model.zero_grad()
+    train_iterator = trange(
+        epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
+    )
+
+    set_seed(args)  
+    alltimelowestloss = 99999999
+    epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+    for step, batch in enumerate(epoch_iterator):
+            inputs, labels = (batch, batch)
+            inputs = inputs.to(args.device)
+            labels = labels.to(args.device)
+            model.train()
+            outputs = model(inputs, labels=labels)
+            loss = outputs[0]  
+
+            loss.backward()
+
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                optimizer.step()
+                model.zero_grad()
+
+                if (loss.item() < alltimelowestloss):
+                    model.save_pretrained(args.output_dir)
+    print("realtimedone")
+        
+
+    tb_writer.close()
+
+
+def beginrealtime(tokenizer, model):
+    args = Args()
+    device = torch.device("cpu")
+    args.device = device
+    model.to(args.device)
+
+    train_dataset = load_and_cache_examples(args, tokenizer, df)
+    os.makedirs(args.output_dir, exist_ok=True)
+    real_time(tokenizer, model, args, train_dataset)
+
