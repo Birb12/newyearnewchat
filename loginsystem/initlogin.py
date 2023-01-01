@@ -1,6 +1,15 @@
 import hashlib
 from itertools import islice
 
+
+class User:
+    def __init__(self, pwd, email, name, resolutions):
+        self.pwd = pwd
+        self.email = email
+        self.name = name
+        self.resolutions = resolutions
+
+
 def signup(email, pwd, name):
     enc = pwd.encode()
     hash1 = hashlib.md5(enc).hexdigest()
@@ -21,22 +30,68 @@ def signup(email, pwd, name):
 def login(email, pwd):
     auth = pwd.encode()
     auth_hash = hashlib.md5(auth).hexdigest()
+    stored_email = ""
+    stored_pwd = ""
+    stored_name=""
     with open("credentials.txt", "r") as f:
-        lines_gen = islice(f, 3)
-        count = 0
-        for line in lines_gen:
-            if count == 0:
+        for line in f:
+            count = 0
+            if line.strip() == email:
                 stored_email = line.strip()
-            if count == 1:
-                stored_pwd = line.strip()
-            if count == 2:
-                stored_name = line.strip()
-            count += 1
+                for i in range(2):
+                    if count == 0:
+                        stored_pwd = next(f).strip()
+                        count += 1
+                    else:
+                        stored_name = next(f).strip()
+                        print(stored_name)
+                        break
         f.close()
 
-
+    resolutions = []
+    user = User(stored_pwd, stored_email, stored_name, resolutions)
     if email == stored_email and auth_hash == stored_pwd:
-        return True, stored_name
+        return True, stored_name, user
     else:
-        return False, "woops"
+        return False, "woops", User("nope", "nope", "nope", resolutions)
 
+def locate_resolutions(user, command, towipe):
+    email_to_look = user.email
+    resolutions = []
+    if command == "add":
+        with open("credentials.txt", "r+") as f:
+            for line in f:
+                count = 0
+                if line.strip() == email_to_look:
+                    for i in range(2): next(f) # get rid of pwd and name
+
+                    f.write(towipe)
+                    f.write("\n")
+    if command == "remove":
+        with open("credentials.txt", "r") as f:
+            lines = f.readlines()
+        with open("credentials.txt", "w") as f:
+            for line in lines:
+                if line.strip("\n") != towipe:
+                    f.write(line)
+
+    with open("credentials.txt", "r") as f:
+        for line in f:
+            if line.strip() == email_to_look:
+                for i in range(2): next(f)
+                
+                for j in range(99999):
+                    a = next(f).strip()
+                    if '@' not in a and a:
+                        resolutions.append(a)
+                    else:
+                        break
+        f.close()
+
+    return resolutions
+
+                
+
+
+
+locate_resolutions(User("pwd", "ianm@gmail.com", "Ian", resolutions=None), "remove", "towipe")
