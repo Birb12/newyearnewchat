@@ -11,11 +11,12 @@ class User:
 
 
 def signup(email, pwd, name):
+
     enc = pwd.encode()
     hash1 = hashlib.md5(enc).hexdigest()
 
     
-    with open("credentials.txt", "a+") as f:
+    with open("credentials.txt", "w+") as f:
         for line in f:
             if line == email:
                 return False, "woops"
@@ -64,9 +65,8 @@ def locate_resolutions(user, command, towipe):
                 count = 0
                 if line.strip() == email_to_look:
                     for i in range(2): next(f) # get rid of pwd and name
-
-                    f.write(towipe)
                     f.write("\n")
+                    f.write(towipe)
     if command == "remove":
         with open("credentials.txt", "r") as f:
             lines = f.readlines()
@@ -75,6 +75,10 @@ def locate_resolutions(user, command, towipe):
                 if line.strip("\n") != towipe:
                     f.write(line)
 
+    with open("credentials.txt") as f:
+        lines = f.readlines()
+        last = lines[-1]
+
     with open("credentials.txt", "r") as f:
         for line in f:
             if line.strip() == email_to_look:
@@ -82,16 +86,16 @@ def locate_resolutions(user, command, towipe):
                 
                 for j in range(99999):
                     a = next(f).strip()
-                    if '@' not in a and a:
+                    if '@' not in a and a == last:
+                        resolutions.append(a)
+                        break
+                    elif '@' not in a:
                         resolutions.append(a)
                     else:
                         break
         f.close()
 
+    for i in resolutions:
+        print(i)
+
     return resolutions
-
-                
-
-
-
-locate_resolutions(User("pwd", "ianm@gmail.com", "Ian", resolutions=None), "remove", "towipe")
